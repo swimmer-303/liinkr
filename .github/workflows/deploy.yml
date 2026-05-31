@@ -1,0 +1,36 @@
+name: Deploy to Firebase
+
+# Deploys hosting + Firestore rules to the live site. Runs automatically on
+# every push to main, and can be triggered by hand from the Actions tab
+# (handy when you're on a phone and can't run the CLI).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firebase-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # writes the service-account JSON to a file and exports
+      # GOOGLE_APPLICATION_CREDENTIALS, which firebase-tools picks up.
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - run: npm install -g firebase-tools
+
+      - run: firebase deploy --only hosting,firestore --project liinkr --non-interactive
