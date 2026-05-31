@@ -1,12 +1,39 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function isMe() {
+      return request.auth != null && request.auth.uid == 'MODyWf0INhVaRwYnlJ4mLujH5ld2';
+    }
+
+    // a redirect bumping the click count. visitor isnt signed in, so let it through,
+    // but ONLY the counter + lastHit can move — the url itself stays put.
+    function isClickBump() {
+      return request.resource.data.url == resource.data.url
+          && request.resource.data.created == resource.data.created
+          && request.resource.data.clicks == resource.data.clicks + 1
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clicks', 'lastHit']);
+    }
+
     match /links/{code} {
       // anyone can look up a single code (thats how the redirect works in the browser).
-      // but no listing the whole collection, and only i can create/edit/delete.
+      // but no listing the whole collection, and only i can create/delete.
       allow get: if true;
-      allow list: if request.auth != null && request.auth.uid == 'MODyWf0INhVaRwYnlJ4mLujH5ld2';
-      allow write: if request.auth != null && request.auth.uid == 'MODyWf0INhVaRwYnlJ4mLujH5ld2';
+      allow list: if isMe();
+      allow create, delete: if isMe();
+      allow update: if isMe() || isClickBump();
+    }
+
+    match /hits/{hit} {
+      // the redirect page logs a click from the visitors browser (no auth), so anyone
+      // can drop a hit in here — but it has to be the shape we expect and point at a
+      // link that actually exists. nobody but me can read them back, and they cant be
+      // edited or deleted once written.
+      allow create: if request.resource.data.keys().hasOnly(['code', 'ts', 'ref', 'ua', 'lang', 'tz'])
+                    && request.resource.data.code is string
+                    && exists(/databases/$(database)/documents/links/$(request.resource.data.code));
+      allow read: if isMe();
+      allow update, delete: if false;
     }
   }
 }

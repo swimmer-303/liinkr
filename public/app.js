@@ -3,8 +3,8 @@ import {
   getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
-  getFirestore, collection, doc, getDoc, setDoc, deleteDoc,
-  onSnapshot, query, orderBy, serverTimestamp
+  getFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDoc,
+  onSnapshot, query, where, orderBy, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig, ADMIN_UID } from "/config.js";
 
@@ -116,14 +116,137 @@ function watchLinks() {
       copy.textContent = "copy";
       copy.onclick = () => navigator.clipboard?.writeText(location.origin + "/" + d.id);
 
+      const stats = document.createElement("button");
+      stats.textContent = "stats";
+
       const del = document.createElement("button");
       del.textContent = "delete";
       del.onclick = () => {
         if (confirm("delete /" + d.id + " ?")) deleteDoc(doc(db, "links", d.id));
       };
 
-      li.append(code, dest, clicks, copy, del);
+      const panel = document.createElement("div");
+      panel.className = "stats";
+      panel.hidden = true;
+      stats.onclick = () => {
+        panel.hidden = !panel.hidden;
+        if (!panel.hidden && !panel.dataset.loaded) {
+          panel.dataset.loaded = "1";
+          loadStats(d.id, panel);
+        }
+      };
+
+      li.append(code, dest, clicks, copy, stats, del, panel);
       linksEl.appendChild(li);
     });
   });
+}
+
+// rough user-agent sniffing. not perfect but good enough to eyeball traffic.
+function browserOf(ua) {
+  if (/Edg\//.test(ua)) return "Edge";
+  if (/OPR\/|Opera/.test(ua)) return "Opera";
+  if (/Firefox\//.test(ua)) return "Firefox";
+  if (/Chrome\//.test(ua)) return "Chrome";
+  if (/Safari\//.test(ua)) return "Safari";
+  return "other";
+}
+function osOf(ua) {
+  if (/iPhone|iPad|iPod/.test(ua)) return "iOS";
+  if (/Android/.test(ua)) return "Android";
+  if (/Mac OS X/.test(ua)) return "macOS";
+  if (/Windows/.test(ua)) return "Windows";
+  if (/Linux/.test(ua)) return "Linux";
+  return "other";
+}
+function refOf(r) {
+  if (!r) return "direct";
+  try { return new URL(r).hostname.replace(/^www\./, ""); } catch (e) { return "other"; }
+}
+
+// count things into a map, then hand back the top few sorted high->low
+function tally(rows, fn) {
+  const m = {};
+  for (const r of rows) { const k = fn(r) || "?"; m[k] = (m[k] || 0) + 1; }
+  return Object.entries(m).sort((a, b) => b[1] - a[1]);
+}
+
+function breakdown(title, pairs, limit) {
+  const wrap = document.createElement("div");
+  wrap.className = "bd";
+  const h = document.createElement("h4");
+  h.textContent = title;
+  wrap.appendChild(h);
+  const top = limit ? pairs.slice(0, limit) : pairs;
+  const max = top.length ? top[0][1] : 1;
+  for (const [label, n] of top) {
+    const row = document.createElement("div");
+    row.className = "bar";
+    const bar = document.createElement("span");
+    bar.style.width = Math.max(4, Math.round((n / max) * 100)) + "%";
+    const lab = document.createElement("em");
+    lab.textContent = label;
+    const cnt = document.createElement("b");
+    cnt.textContent = n;
+    row.append(bar, lab, cnt);
+    wrap.appendChild(row);
+  }
+  if (!top.length) wrap.appendChild(document.createTextNode("none yet"));
+  return wrap;
+}
+
+// last 30 days as little daily bars
+function timeline(rows) {
+  const days = 30;
+  const buckets = new Array(days).fill(0);
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1)).getTime();
+  for (const r of rows) {
+    const t = r.ts && r.ts.toMillis ? r.ts.toMillis() : 0;
+    if (!t || t < start) continue;
+    const idx = Math.floor((t - start) / 86400000);
+    if (idx >= 0 && idx < days) buckets[idx]++;
+  }
+  const max = Math.max(1, ...buckets);
+  const wrap = document.createElement("div");
+  wrap.className = "bd";
+  const h = document.createElement("h4");
+  h.textContent = "last 30 days";
+  wrap.appendChild(h);
+  const chart = document.createElement("div");
+  chart.className = "spark";
+  buckets.forEach((n, i) => {
+    const col = document.createElement("span");
+    col.style.height = Math.round((n / max) * 100) + "%";
+    const d = new Date(start + i * 86400000);
+    col.title = (d.getMonth() + 1) + "/" + d.getDate() + ": " + n;
+    chart.appendChild(col);
+  });
+  wrap.appendChild(chart);
+  return wrap;
+}
+
+async function loadStats(code, panel) {
+  panel.textContent = "loading…";
+  try {
+    const snap = await getDocs(query(collection(db, "hits"), where("code", "==", code)));
+    const rows = snap.docs.map((d) => d.data());
+    panel.textContent = "";
+
+    if (!rows.length) { panel.textContent = "no clicks logged yet"; return; }
+
+    const summary = document.createElement("p");
+    summary.className = "sum";
+    summary.textContent = rows.length + " clicks logged";
+    panel.appendChild(summary);
+
+    panel.appendChild(timeline(rows));
+    panel.appendChild(breakdown("referrers", tally(rows, (r) => refOf(r.ref)), 6));
+    panel.appendChild(breakdown("browser", tally(rows, (r) => browserOf(r.ua || "")), 6));
+    panel.appendChild(breakdown("os", tally(rows, (r) => osOf(r.ua || "")), 6));
+    panel.appendChild(breakdown("language", tally(rows, (r) => r.lang || "?"), 6));
+    panel.appendChild(breakdown("timezone", tally(rows, (r) => r.tz || "?"), 6));
+  } catch (err) {
+    panel.textContent = "couldnt load stats: " + err.message;
+  }
 }

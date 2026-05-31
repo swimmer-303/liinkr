@@ -18,6 +18,63 @@
 
     function bail() { location.replace(FALLBACK); }
 
+    // firestore-ish random id for the hit doc (we cant get an auto id back from a beacon)
+    function hitId() {
+      const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+      let out = "";
+      for (let i = 0; i < 20; i++) out += chars[Math.floor(Math.random() * chars.length)];
+      return out;
+    }
+
+    // log a click from the visitors browser. uses the firestore REST commit endpoint
+    // through sendBeacon so it still goes out even though were about to navigate away.
+    // one commit = write the hit event + bump the links click counter.
+    function logHit() {
+      try {
+        const base = "projects/" + firebaseConfig.projectId + "/databases/(default)/documents";
+        const id = hitId();
+        const body = {
+          writes: [
+            {
+              update: {
+                name: base + "/hits/" + id,
+                fields: {
+                  code: { stringValue: code },
+                  ref:  { stringValue: document.referrer || "" },
+                  ua:   { stringValue: navigator.userAgent || "" },
+                  lang: { stringValue: navigator.language || "" },
+                  tz:   { stringValue: (Intl.DateTimeFormat().resolvedOptions().timeZone) || "" }
+                }
+              },
+              updateTransforms: [
+                { fieldPath: "ts", setToServerValue: "REQUEST_TIME" }
+              ],
+              currentDocument: { exists: false }
+            },
+            {
+              transform: {
+                document: base + "/links/" + code,
+                fieldTransforms: [
+                  { fieldPath: "clicks", increment: { integerValue: "1" } },
+                  { fieldPath: "lastHit", setToServerValue: "REQUEST_TIME" }
+                ]
+              }
+            }
+          ]
+        };
+
+        const url = "https://firestore.googleapis.com/v1/" + base + ":commit?key=" + firebaseConfig.apiKey;
+        const blob = new Blob([JSON.stringify(body)], { type: "application/json" });
+
+        if (!(navigator.sendBeacon && navigator.sendBeacon(url, blob))) {
+          // older browser / beacon refused — fall back to a keepalive fetch
+          fetch(url, { method: "POST", body: blob, keepalive: true }).catch(() => {});
+        }
+      } catch (e) {
+        // analytics should never block the redirect
+      }
+    }
+
     if (!code) {
       bail();
     } else {
@@ -25,6 +82,7 @@
       getDoc(doc(db, "links", code)).then((snap) => {
         const data = snap.exists() ? snap.data() : null;
         if (data && data.url) {
+          logHit();
           location.replace(data.url);
         } else {
           bail();
