@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="robots" content="noindex">
+  <title>redirecting...</title>
+</head>
+<body>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import { firebaseConfig } from "/config.js";
+
+    const FALLBACK = "https://spencerhedges.com/fwd/";
+
+    // path is like /abc123 , grab the first chunk after the slash
+    const code = location.pathname.replace(/^\/+/, "").split("/")[0];
+
+    function bail() { location.replace(FALLBACK); }
+
+    if (!code) {
+      bail();
+    } else {
+      const db = getFirestore(initializeApp(firebaseConfig));
+      getDoc(doc(db, "links", code)).then((snap) => {
+        const data = snap.exists() ? snap.data() : null;
+        if (data && data.url) {
+          location.replace(data.url);
+        } else {
+          bail();
+        }
+      }).catch(() => bail());
+    }
+  </script>
+</body>
+</html>

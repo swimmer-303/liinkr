@@ -1,0 +1,57 @@
+/* nothing fancy. system fonts, keep it quick */
+* { box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, system-ui, sans-serif;
+  max-width: 640px;
+  margin: 40px auto;
+  padding: 0 16px;
+  color: #111;
+}
+
+h1 { font-size: 1.4rem; margin: 0; }
+
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+form#newLink {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+input, button {
+  font-size: 1rem;
+  padding: 8px 10px;
+}
+
+button { cursor: pointer; }
+
+#msg { min-height: 1.2em; margin: 0 0 16px; color: #666; font-size: .9rem; }
+
+ul#links { list-style: none; padding: 0; margin: 0; }
+
+ul#links li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid #eee;
+  font-size: .9rem;
+}
+
+ul#links li .code { font-weight: 600; }
+ul#links li .dest {
+  color: #555;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+ul#links li .clicks { color: #999; }
+ul#links li button { padding: 4px 8px; font-size: .8rem; }

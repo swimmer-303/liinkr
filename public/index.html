@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>liinkr</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main id="app">
+    <!-- signed out -->
+    <section id="signin" hidden>
+      <h1>liinkr</h1>
+      <p>gotta sign in first</p>
+      <button id="signinBtn">sign in with google</button>
+    </section>
+
+    <!-- wrong account -->
+    <section id="nope" hidden>
+      <p>nope, this isnt your account.</p>
+      <button id="signoutBtn2">sign out</button>
+    </section>
+
+    <!-- signed in -->
+    <section id="main" hidden>
+      <div class="top">
+        <h1>liinkr</h1>
+        <button id="signoutBtn">sign out</button>
+      </div>
+
+      <form id="newLink">
+        <input id="url" type="url" placeholder="https://long-url-goes-here.com/whatever" required>
+        <input id="slug" type="text" placeholder="custom slug (optional)" autocapitalize="off" autocomplete="off" spellcheck="false">
+        <button type="submit">make it</button>
+      </form>
+      <p id="msg"></p>
+
+      <ul id="links"></ul>
+    </section>
+  </main>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
