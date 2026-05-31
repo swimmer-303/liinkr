@@ -33,4 +33,4 @@ jobs:
 
       - run: npm install -g firebase-tools
 
-      - run: firebase deploy --only hosting,firestore --project liinkr --non-interactive
+      - run: firebase deploy --only hosting --project liinkr --non-interactive
