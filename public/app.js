@@ -164,6 +164,124 @@ function refOf(r) {
   try { return new URL(r).hostname.replace(/^www\./, ""); } catch (e) { return "other"; }
 }
 
+// device bucket — prefer what the redirect page recorded, fall back to ua sniffing
+// for older hits that predate the field.
+function deviceOf(r) {
+  if (r.dev) return r.dev;
+  const ua = r.ua || "";
+  if (/iPad|Tablet/.test(ua)) return "tablet";
+  if (/Mobi|iPhone|Android/.test(ua)) return "mobile";
+  return "desktop";
+}
+
+// roll a timezone up to a continent-ish region. its only a proxy (we never do a
+// real geo-ip lookup) but its free and surprisingly decent.
+function regionOf(tz) {
+  if (!tz) return "?";
+  const head = tz.split("/")[0];
+  const map = {
+    America: "americas", Europe: "europe", Asia: "asia", Africa: "africa",
+    Australia: "oceania", Pacific: "oceania", Atlantic: "atlantic",
+    Indian: "indian ocean", Antarctica: "antarctica"
+  };
+  return map[head] || head.toLowerCase() || "?";
+}
+
+const DOW = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+// count distinct non-empty values for a field
+function distinct(rows, key) {
+  const s = new Set();
+  for (const r of rows) { if (r[key]) s.add(r[key]); }
+  return s.size;
+}
+
+// day-of-week chart, kept in sun..sat order instead of sorted by count
+function dowChart(rows) {
+  const buckets = new Array(7).fill(0);
+  for (const r of rows) {
+    if (typeof r.dow === "number" && r.dow >= 0 && r.dow < 7) buckets[r.dow]++;
+  }
+  const max = Math.max(1, ...buckets);
+  const wrap = document.createElement("div");
+  wrap.className = "bd";
+  const h = document.createElement("h4");
+  h.textContent = "day of week";
+  wrap.appendChild(h);
+  for (let i = 0; i < 7; i++) {
+    const row = document.createElement("div");
+    row.className = "bar";
+    const bar = document.createElement("span");
+    bar.style.width = Math.max(4, Math.round((buckets[i] / max) * 100)) + "%";
+    const lab = document.createElement("em");
+    lab.textContent = DOW[i];
+    const cnt = document.createElement("b");
+    cnt.textContent = buckets[i];
+    row.append(bar, lab, cnt);
+    wrap.appendChild(row);
+  }
+  return wrap;
+}
+
+// 24 cells, one per hour of the visitors local day, shaded by how busy it is
+function hourHeat(rows) {
+  const buckets = new Array(24).fill(0);
+  let any = false;
+  for (const r of rows) {
+    if (typeof r.hr === "number" && r.hr >= 0 && r.hr < 24) { buckets[r.hr]++; any = true; }
+  }
+  const wrap = document.createElement("div");
+  wrap.className = "bd";
+  const h = document.createElement("h4");
+  h.textContent = "hour of day (visitor local)";
+  wrap.appendChild(h);
+  if (!any) { wrap.appendChild(document.createTextNode("not enough data yet")); return wrap; }
+  const max = Math.max(1, ...buckets);
+  const grid = document.createElement("div");
+  grid.className = "heat";
+  buckets.forEach((n, i) => {
+    const cell = document.createElement("span");
+    const o = n ? 0.15 + 0.85 * (n / max) : 0.04;
+    cell.style.background = "rgba(79,124,214," + o.toFixed(2) + ")";
+    cell.title = i + ":00 — " + n;
+    grid.appendChild(cell);
+  });
+  wrap.appendChild(grid);
+  return wrap;
+}
+
+// dump some rows to a csv file the browser downloads. handy for digging in a sheet.
+function exportCsv(name, rows) {
+  const cols = ["ts", "code", "ref", "ua", "dev", "lang", "tz", "vid", "fresh", "hr", "dow", "net", "dark", "bot", "qs"];
+  const esc = (v) => {
+    const s = v == null ? "" : String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const lines = [cols.join(",")];
+  for (const r of rows) {
+    const ts = r.ts && r.ts.toDate ? r.ts.toDate().toISOString() : "";
+    lines.push(cols.map((c) => esc(c === "ts" ? ts : r[c])).join(","));
+  }
+  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+// little "X unique / Y new" style header used in a few spots
+function statLine(label, n) {
+  const span = document.createElement("span");
+  span.className = "kpi";
+  const b = document.createElement("b");
+  b.textContent = n;
+  const e = document.createElement("em");
+  e.textContent = label;
+  span.append(b, e);
+  return span;
+}
+
 // count things into a map, then hand back the top few sorted high->low
 function tally(rows, fn) {
   const m = {};
@@ -235,18 +353,103 @@ async function loadStats(code, panel) {
 
     if (!rows.length) { panel.textContent = "no clicks logged yet"; return; }
 
-    const summary = document.createElement("p");
-    summary.className = "sum";
-    summary.textContent = rows.length + " clicks logged";
-    panel.appendChild(summary);
+    const uniq = distinct(rows, "vid");
+    const fresh = rows.filter((r) => r.fresh === true).length;
+    const bots = rows.filter((r) => r.bot === true).length;
+
+    const sum = document.createElement("div");
+    sum.className = "kpis";
+    sum.appendChild(statLine("clicks", rows.length));
+    if (uniq) sum.appendChild(statLine("unique", uniq));
+    if (fresh) sum.appendChild(statLine("new", fresh));
+    if (uniq) sum.appendChild(statLine("returning", Math.max(0, rows.length - fresh)));
+    if (bots) sum.appendChild(statLine("bot hits", bots));
+    panel.appendChild(sum);
 
     panel.appendChild(timeline(rows));
+    panel.appendChild(hourHeat(rows));
+    panel.appendChild(dowChart(rows));
     panel.appendChild(breakdown("referrers", tally(rows, (r) => refOf(r.ref)), 6));
+    panel.appendChild(breakdown("region", tally(rows, (r) => regionOf(r.tz)), 6));
+    panel.appendChild(breakdown("timezone", tally(rows, (r) => r.tz || "?"), 6));
+    panel.appendChild(breakdown("device", tally(rows, (r) => deviceOf(r)), 6));
     panel.appendChild(breakdown("browser", tally(rows, (r) => browserOf(r.ua || "")), 6));
     panel.appendChild(breakdown("os", tally(rows, (r) => osOf(r.ua || "")), 6));
     panel.appendChild(breakdown("language", tally(rows, (r) => r.lang || "?"), 6));
-    panel.appendChild(breakdown("timezone", tally(rows, (r) => r.tz || "?"), 6));
+    const nets = tally(rows.filter((r) => r.net), (r) => r.net);
+    if (nets.length) panel.appendChild(breakdown("connection", nets, 6));
+
+    const tools = document.createElement("div");
+    tools.className = "tools";
+    const csv = document.createElement("button");
+    csv.textContent = "export csv";
+    csv.onclick = () => exportCsv("liinkr-" + code + ".csv", rows);
+    tools.appendChild(csv);
+    panel.appendChild(tools);
   } catch (err) {
     panel.textContent = "couldnt load stats: " + err.message;
+  }
+}
+
+// ----- the all-links dashboard -----
+
+const dashEl = document.getElementById("dash");
+const dashBtn = document.getElementById("dashBtn");
+if (dashBtn) {
+  dashBtn.onclick = () => {
+    dashEl.hidden = !dashEl.hidden;
+    if (!dashEl.hidden) loadDashboard(dashEl);
+  };
+}
+
+async function loadDashboard(panel) {
+  panel.innerHTML = "";
+  panel.textContent = "crunching…";
+  try {
+    const [hitSnap, linkSnap] = await Promise.all([
+      getDocs(collection(db, "hits")),
+      getDocs(collection(db, "links"))
+    ]);
+    const rows = hitSnap.docs.map((d) => d.data());
+    const links = linkSnap.docs.map((d) => ({ code: d.id, ...d.data() }));
+    panel.innerHTML = "";
+
+    const totalClicks = links.reduce((a, l) => a + (l.clicks || 0), 0);
+
+    const kpis = document.createElement("div");
+    kpis.className = "kpis";
+    kpis.appendChild(statLine("links", links.length));
+    kpis.appendChild(statLine("clicks", totalClicks));
+    kpis.appendChild(statLine("logged hits", rows.length));
+    kpis.appendChild(statLine("unique visitors", distinct(rows, "vid")));
+    panel.appendChild(kpis);
+
+    if (rows.length) {
+      panel.appendChild(timeline(rows));
+      panel.appendChild(hourHeat(rows));
+      panel.appendChild(dowChart(rows));
+    }
+
+    // top links by clicks
+    const top = links.slice().sort((a, b) => (b.clicks || 0) - (a.clicks || 0));
+    panel.appendChild(breakdown("top links", top.map((l) => ["/" + l.code, l.clicks || 0]), 8));
+
+    if (rows.length) {
+      panel.appendChild(breakdown("referrers", tally(rows, (r) => refOf(r.ref)), 6));
+      panel.appendChild(breakdown("region", tally(rows, (r) => regionOf(r.tz)), 6));
+      panel.appendChild(breakdown("device", tally(rows, (r) => deviceOf(r)), 6));
+      panel.appendChild(breakdown("browser", tally(rows, (r) => browserOf(r.ua || "")), 6));
+      panel.appendChild(breakdown("os", tally(rows, (r) => osOf(r.ua || "")), 6));
+    }
+
+    const tools = document.createElement("div");
+    tools.className = "tools";
+    const csv = document.createElement("button");
+    csv.textContent = "export all csv";
+    csv.onclick = () => exportCsv("liinkr-all.csv", rows);
+    tools.appendChild(csv);
+    panel.appendChild(tools);
+  } catch (err) {
+    panel.textContent = "couldnt load dashboard: " + err.message;
   }
 }

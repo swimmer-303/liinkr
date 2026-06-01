@@ -27,6 +27,40 @@
       return out;
     }
 
+    // sticky visitor id so we can tell unique people apart from raw clicks.
+    // private mode can throw on localStorage, so if that happens we just treat
+    // every hit as a brand new visitor (no worse than not knowing).
+    function visitor() {
+      try {
+        let v = localStorage.getItem("liinkr_vid");
+        if (v) return { vid: v, fresh: false };
+        v = hitId();
+        localStorage.setItem("liinkr_vid", v);
+        return { vid: v, fresh: true };
+      } catch (e) {
+        return { vid: hitId(), fresh: true };
+      }
+    }
+
+    // rough device bucket off the UA. good enough to eyeball mobile vs desktop.
+    function deviceKind(ua) {
+      if (/iPad|Tablet|PlayBook|Silk/.test(ua) || (/Android/.test(ua) && !/Mobile/.test(ua))) return "tablet";
+      if (/Mobi|iPhone|iPod|Android.*Mobile|Windows Phone/.test(ua)) return "mobile";
+      return "desktop";
+    }
+
+    // turn a plain object into firestore REST typed fields
+    function toFields(obj) {
+      const out = {};
+      for (const k in obj) {
+        const v = obj[k];
+        if (typeof v === "string") out[k] = { stringValue: v };
+        else if (typeof v === "boolean") out[k] = { booleanValue: v };
+        else if (typeof v === "number") out[k] = Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+      }
+      return out;
+    }
+
     // log a click from the visitors browser. uses the firestore REST commit endpoint
     // through sendBeacon so it still goes out even though were about to navigate away.
     // one commit = write the hit event + bump the links click counter.
@@ -34,18 +68,37 @@
       try {
         const base = "projects/" + firebaseConfig.projectId + "/databases/(default)/documents";
         const id = hitId();
+        const ua = navigator.userAgent || "";
+        const who = visitor();
+        const now = new Date();
+        const conn = navigator.connection || {};
+
+        const data = {
+          code: code,
+          ref:  document.referrer || "",
+          ua:   ua,
+          lang: navigator.language || "",
+          tz:   (Intl.DateTimeFormat().resolvedOptions().timeZone) || "",
+          vid:  who.vid,
+          fresh: who.fresh,
+          dev:  deviceKind(ua),
+          sw:   screen.width || 0,
+          sh:   screen.height || 0,
+          dpr:  window.devicePixelRatio || 1,
+          net:  conn.effectiveType || "",
+          hr:   now.getHours(),
+          dow:  now.getDay(),
+          dark: !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches),
+          bot:  navigator.webdriver === true,
+          qs:   (location.search || "").slice(1, 200)
+        };
+
         const body = {
           writes: [
             {
               update: {
                 name: base + "/hits/" + id,
-                fields: {
-                  code: { stringValue: code },
-                  ref:  { stringValue: document.referrer || "" },
-                  ua:   { stringValue: navigator.userAgent || "" },
-                  lang: { stringValue: navigator.language || "" },
-                  tz:   { stringValue: (Intl.DateTimeFormat().resolvedOptions().timeZone) || "" }
-                }
+                fields: toFields(data)
               },
               updateTransforms: [
                 { fieldPath: "ts", setToServerValue: "REQUEST_TIME" }

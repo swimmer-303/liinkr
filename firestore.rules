@@ -29,7 +29,12 @@ service cloud.firestore {
       // can drop a hit in here — but it has to be the shape we expect and point at a
       // link that actually exists. nobody but me can read them back, and they cant be
       // edited or deleted once written.
-      allow create: if request.resource.data.keys().hasOnly(['code', 'ts', 'ref', 'ua', 'lang', 'tz'])
+      // code + ts always have to be there. the rest are optional extra signals the
+      // redirect page tacks on (device, screen, visitor id, local time, etc), but a
+      // hit cant carry any keys we didnt plan for.
+      allow create: if request.resource.data.keys().hasAll(['code', 'ts'])
+                    && request.resource.data.keys().hasOnly(['code', 'ts', 'ref', 'ua', 'lang', 'tz',
+                         'vid', 'fresh', 'dev', 'sw', 'sh', 'dpr', 'net', 'hr', 'dow', 'dark', 'bot', 'qs'])
                     && request.resource.data.code is string
                     && exists(/databases/$(database)/documents/links/$(request.resource.data.code));
       allow read: if isMe();

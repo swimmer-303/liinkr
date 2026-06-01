@@ -97,15 +97,79 @@ ul#links li button { padding: 4px 8px; font-size: .8rem; }
 .stats .bar b { position: relative; z-index: 1; margin-left: auto; color: #666; font-weight: 600; }
 
 /* 30 day sparkline */
-.stats .spark {
+.stats .spark, #dash .spark {
   display: flex;
   align-items: flex-end;
   gap: 2px;
   height: 40px;
 }
-.stats .spark span {
+.stats .spark span, #dash .spark span {
   flex: 1;
   min-height: 1px;
   background: #4f7cd6;
   border-radius: 1px 1px 0 0;
 }
+
+.topbtns { display: flex; gap: 8px; }
+
+/* the all-links dashboard drawer */
+#dash {
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  background: #fafafa;
+  border: 1px solid #eee;
+  border-radius: 6px;
+  color: #444;
+}
+
+/* dashboard + per-link share the same breakdown / chart styling */
+#dash .bd { margin: 0 0 12px; }
+#dash .bd h4 {
+  margin: 0 0 5px;
+  font-size: .75rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #999;
+}
+#dash .bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 6px;
+  margin-bottom: 2px;
+}
+#dash .bar span {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  background: #e6eefc;
+  border-radius: 3px;
+  z-index: 0;
+}
+#dash .bar em { position: relative; z-index: 1; font-style: normal; }
+#dash .bar b { position: relative; z-index: 1; margin-left: auto; color: #666; font-weight: 600; }
+
+/* the little number tiles up top */
+.kpis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 0 0 14px;
+}
+.kpi { display: flex; flex-direction: column; line-height: 1.1; }
+.kpi b { font-size: 1.3rem; color: #111; }
+.kpi em { font-style: normal; font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; color: #999; }
+
+/* hour-of-day heat strip */
+.heat {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  gap: 2px;
+}
+.heat span {
+  height: 18px;
+  border-radius: 2px;
+}
+
+.tools { margin-top: 4px; }
+.tools button { padding: 4px 8px; font-size: .8rem; }
